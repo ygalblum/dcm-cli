@@ -11,6 +11,7 @@ func newSPCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newSPResourceCommand())
+	cmd.AddCommand(newSPProviderCommand())
 
 	return cmd
 }
