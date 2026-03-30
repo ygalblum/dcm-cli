@@ -17,6 +17,7 @@ dependencies.
 - Catalog item operations (create, list, get, delete)
 - Catalog item instance operations (create, list, get, delete)
 - SP resource read operations (list, get) via Service Provider Resource Manager
+- SP provider read operations (list, get) via Service Provider Manager
 - Version display
 - Output formatting (table, JSON, YAML)
 - Configuration via file, environment variables, and flags
@@ -78,6 +79,7 @@ dcm-cli/
 │   │   ├── catalog_item.go            ← Catalog item command group
 │   │   ├── catalog_instance.go        ← Catalog instance command group
 │   │   ├── sp_resource.go            ← SP resource command group
+│   │   ├── sp_provider.go            ← SP provider command group
 │   │   └── completion.go             ← Shell completion command
 │   └── version/                       ← Build-time version info
 ├── test/e2e/                          ← E2E tests (build tag: e2e)
@@ -103,6 +105,7 @@ dcm-cli/
 | 8 | Version Command                | VER    | 1          |
 | 9 | SP Resource Commands           | SPR    | 1, 2, 3    |
 | 10 | Shell Completion Command      | CMP    | 1          |
+| 11 | SP Provider Commands           | SPP    | 1, 2, 3    |
 
 ```
 Topic 1: CLI Framework           (independent)
@@ -114,6 +117,7 @@ Topic 3: Output Formatting       (independent)
   +---------+---------+---> Topic 6: Catalog Item Commands   (depends on 1, 2, 3)
   +---------+---------+---> Topic 7: Catalog Instance Cmds   (depends on 1, 2, 3)
   +---------+---------+---> Topic 9: SP Resource Commands    (depends on 1, 2, 3)
+  +---------+---------+---> Topic 11: SP Provider Commands   (depends on 1, 2, 3)
   |
   +-----------------------> Topic 8: Version Command         (depends on 1)
   +-----------------------> Topic 10: Shell Completion Cmd   (depends on 1)
@@ -166,7 +170,7 @@ Out of scope: shell autocompletion, plugin system, interactive prompts.
 - **When** `dcm --help` is run
 - **Then** subcommands `policy`, `catalog`, `sp`, `version`, and `completion` MUST be listed
 - **And** `dcm catalog --help` MUST list `service-type`, `item`, and `instance`
-- **And** `dcm sp --help` MUST list `resource`
+- **And** `dcm sp --help` MUST list `resource` and `provider`
 
 ##### AC-CLI-040: Exit code on success
 
@@ -1147,6 +1151,104 @@ Depends on Topic 1 (CLI Framework).
 
 ---
 
+### 4.11 SP Provider Commands
+
+#### Overview
+
+Implement the `dcm sp provider` command group with read-only subcommands: `list`
+and `get`. Providers are service providers registered with the Service Provider
+Manager. The CLI provides read-only access to these resources via the top-level
+generated SP Manager client (`service-provider-manager/pkg/client`).
+
+Out of scope: SP provider create/update/delete (managed via other flows),
+SP provider health check.
+
+#### Requirements
+
+| ID | Requirement | Priority | Notes |
+|----|-------------|----------|-------|
+| REQ-SPP-010 | `dcm sp provider list` MUST list SP providers with optional `--type`, `--page-size`, `--page-token` flags | MUST | |
+| REQ-SPP-020 | `dcm sp provider list` MUST display SP providers in the configured output format | MUST | |
+| REQ-SPP-030 | `dcm sp provider get` MUST accept a `PROVIDER_ID` positional argument and display the SP provider | MUST | |
+| REQ-SPP-040 | Missing `PROVIDER_ID` argument for `get` MUST result in a usage error (exit code 2) | MUST | |
+| REQ-SPP-050 | All SP provider commands MUST use the generated SP Manager client (`service-provider-manager/pkg/client`) | MUST | |
+
+#### Table Output Columns
+
+```
+ID              NAME            SERVICE TYPE    STATUS      HEALTH    CREATED
+kubevirt-123    KubeVirt SP     compute         registered  healthy   2026-03-09T10:00:00Z
+```
+
+#### Acceptance Criteria
+
+##### AC-SPP-010: List SP providers
+
+- **Validates:** REQ-SPP-010, REQ-SPP-020
+- **Given** SP providers exist in the system
+- **When** `dcm sp provider list` is invoked
+- **Then** a GET request MUST be sent to `/api/v1alpha1/providers`
+- **And** the SP providers MUST be displayed in the configured output format
+
+##### AC-SPP-020: List SP providers with pagination
+
+- **Validates:** REQ-SPP-010
+- **Given** SP providers exist in the system
+- **When** `dcm sp provider list --page-size 5` is invoked
+- **Then** the GET request MUST include `max_page_size=5` as a query parameter
+
+##### AC-SPP-030: List SP providers with type filter
+
+- **Validates:** REQ-SPP-010
+- **Given** SP providers exist in the system
+- **When** `dcm sp provider list --type compute` is invoked
+- **Then** the GET request MUST include `type=compute` as a query parameter
+
+##### AC-SPP-040: Get SP provider
+
+- **Validates:** REQ-SPP-030
+- **Given** an SP provider with ID `kubevirt-123` exists
+- **When** `dcm sp provider get kubevirt-123` is invoked
+- **Then** a GET request MUST be sent to `/api/v1alpha1/providers/kubevirt-123`
+- **And** the SP provider MUST be displayed in the configured output format
+
+##### AC-SPP-050: Get without PROVIDER_ID
+
+- **Validates:** REQ-SPP-040
+- **Given** no positional argument is provided
+- **When** `dcm sp provider get` is invoked
+- **Then** the CLI MUST exit with code 2 and display a usage error
+
+##### AC-SPP-060: List SP providers returns empty list
+
+- **Validates:** REQ-SPP-010, REQ-SPP-020
+- **Given** no SP providers exist in the system
+- **When** `dcm sp provider list` is invoked
+- **Then** a GET request MUST be sent to `/api/v1alpha1/providers`
+- **And** an empty result MUST be displayed (empty table with headers only, or empty JSON array/YAML list)
+
+##### AC-SPP-070: Get non-existent SP provider
+
+- **Validates:** REQ-SPP-030, REQ-XC-ERR-010
+- **Given** no SP provider with ID `nonexistent` exists
+- **When** `dcm sp provider get nonexistent` is invoked
+- **Then** the API returns a 404 with RFC 7807 body
+- **And** the CLI MUST display the error in the configured output format and exit with code 1
+
+##### AC-SPP-080: Generated client usage
+
+- **Validates:** REQ-SPP-050
+- **Given** any SP provider command is invoked
+- **When** the command communicates with the API
+- **Then** the generated SP Manager client MUST be used
+
+#### Dependencies
+
+Depends on Topic 1 (CLI Framework), Topic 2 (Configuration), Topic 3 (Output
+Formatting).
+
+---
+
 ## 5. Cross-Cutting Concerns
 
 ### 5.1 Error Handling
@@ -1250,7 +1352,8 @@ Depends on Topic 1 (CLI Framework).
 |----|-------------|----------|-------|
 | REQ-XC-CLI-010 | The CLI MUST use the generated Policy Manager client (`github.com/dcm-project/policy-manager/pkg/client`) for all policy operations | MUST | |
 | REQ-XC-CLI-020 | The CLI MUST use the generated Catalog Manager client (`github.com/dcm-project/catalog-manager/pkg/client`) for all catalog operations | MUST | |
-| REQ-XC-CLI-025 | The CLI MUST use the generated SP Resource Manager client (`github.com/dcm-project/service-provider-manager/pkg/client`) for all SP resource operations | MUST | |
+| REQ-XC-CLI-025 | The CLI MUST use the generated SP Resource Manager client (`github.com/dcm-project/service-provider-manager/pkg/client/resource_manager`) for all SP resource operations | MUST | |
+| REQ-XC-CLI-026 | The CLI MUST use the generated SP Manager client (`github.com/dcm-project/service-provider-manager/pkg/client`) for all SP provider operations | MUST | |
 | REQ-XC-CLI-030 | All clients MUST be instantiated with the API Gateway URL appended with `/api/v1alpha1` | MUST | |
 | REQ-XC-CLI-040 | All clients MUST respect the configured request timeout. The timeout applies to the HTTP request deadline (context timeout) only; file I/O and output formatting are not subject to the timeout. | MUST | |
 | REQ-XC-CLI-050 | All clients MUST use a custom HTTP client with TLS transport when the API Gateway URL uses `https://` | MUST | |
@@ -1265,6 +1368,7 @@ Depends on Topic 1 (CLI Framework).
 - **Then** the Policy Manager client MUST be created with `http://localhost:9080/api/v1alpha1`
 - **And** the Catalog Manager client MUST be created with `http://localhost:9080/api/v1alpha1`
 - **And** the SP Resource Manager client MUST be created with `http://localhost:9080/api/v1alpha1`
+- **And** the SP Manager client MUST be created with `http://localhost:9080/api/v1alpha1`
 
 ##### AC-XC-CLI-020: Request timeout
 
@@ -1405,7 +1509,7 @@ and `catalog-manager/pkg/client` instead of hand-writing HTTP client code.
 boilerplate, and evolve with the OpenAPI specs. The CLI is a thin wrapper around
 these clients.
 
-**Related requirements:** REQ-XC-CLI-010, REQ-XC-CLI-020, REQ-XC-CLI-025
+**Related requirements:** REQ-XC-CLI-010, REQ-XC-CLI-020, REQ-XC-CLI-025, REQ-XC-CLI-026
 
 ### DD-020: Cobra + Viper for CLI framework
 
@@ -1522,8 +1626,9 @@ REQ-OUT-090, REQ-OUT-110, REQ-OUT-120
 | REQ-VER-NNN | 4.8: Version Command | 3 |
 | REQ-SPR-NNN | 4.9: SP Resource Commands | 5 |
 | REQ-CMP-NNN | 4.10: Shell Completion Command | 6 |
+| REQ-SPP-NNN | 4.11: SP Provider Commands | 5 |
 | REQ-XC-ERR-NNN | 5.1: Error Handling | 7 |
 | REQ-XC-INP-NNN | 5.2: Input File Parsing | 3 |
-| REQ-XC-CLI-NNN | 5.3: Generated Client Usage | 5 |
+| REQ-XC-CLI-NNN | 5.3: Generated Client Usage | 6 |
 | REQ-XC-PAG-NNN | 5.4: Pagination | 3 |
-| **Total** | | **100** |
+| **Total** | | **106** |

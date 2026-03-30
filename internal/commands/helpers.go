@@ -14,6 +14,7 @@ import (
 	"time"
 
 	catalogclient "github.com/dcm-project/catalog-manager/pkg/client"
+	spmclient "github.com/dcm-project/service-provider-manager/pkg/client"
 	sprmclient "github.com/dcm-project/service-provider-manager/pkg/client/resource_manager"
 
 	"github.com/dcm-project/cli/internal/config"
@@ -21,6 +22,14 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
+
+func newSPProviderClient(cfg *config.Config) (*spmclient.Client, error) {
+	httpClient, err := buildHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return spmclient.NewClient(apiBaseURL(cfg), spmclient.WithHTTPClient(httpClient))
+}
 
 func newSPResourceClient(cfg *config.Config) (*sprmclient.Client, error) {
 	httpClient, err := buildHTTPClient(cfg)
